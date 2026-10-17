@@ -157,18 +157,25 @@ window.__ModuleLoader__.load({
 				 * `background: var(--dsw-alias-bg-base)`, so it is the one that
 				 * has to follow the slider.
 				 *
-				 * `:not([class*=tabHostBody])` is load-bearing, not tidiness.
-				 * "tabHostBody" CONTAINS "tabHost", so the bare substring matched
-				 * the pane's inner body as well — an element the shipped client
-				 * paints no background on at all. The rule therefore ADDED a
-				 * second translucent layer, and the panel composited four masked
-				 * layers where the conversation beside it had three: measurably
-				 * darker, which is the defect this selector is here to fix.
+				 * The two `:not()` guards are load-bearing, not tidiness. The
+				 * panel's markup is
 				 *
-				 * The prefix is build-hashed, hence the substring match; the
-				 * `panelBody` scope keeps it off unrelated tab hosts.
+				 *     _tabHost_…        the pane itself, paints bg-base
+				 *     _tabHostHeader_…  its 38px title bar, ALSO paints bg-base
+				 *     _tabHostBody_…    its body, paints nothing
+				 *
+				 * and "tabHostHeader" and "tabHostBody" both CONTAIN "tabHost".
+				 * A bare substring therefore hit all three, which did two things:
+				 * it ADDED a layer to the body — an element the client leaves
+				 * transparent — and it overwrote the header's own value, so the
+				 * panel composited four masked layers where the conversation
+				 * beside it had three and its title bar stopped matching the pane
+				 * below it. Measured with a solid magenta canvas, the panel read
+				 * rgb(33, 11, 41) against the conversation's rgb(52, 9, 60).
+				 *
+				 * Excluding both leaves exactly one element: the pane.
 				 */
-				`html[${ART_ATTRIBUTE}] [class*=panelBody] [class*=tabHost]:not([class*=tabHostBody])`,
+				`html[${ART_ATTRIBUTE}] [class*=panelBody] [class*=tabHost]:not([class*=tabHostHeader]):not([class*=tabHostBody])`,
 			],
 		};
 		/**

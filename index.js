@@ -188,7 +188,7 @@ export const OPACITY_SURFACES = [
 		 * where the conversation beside it had three, and read darker.
 		 */
 		extraSelectors: [
-			"html[data-dsh-gallery] [class*=panelBody] [class*=tabHost]:not([class*=tabHostBody])",
+			"html[data-dsh-gallery] [class*=panelBody] [class*=tabHost]:not([class*=tabHostHeader]):not([class*=tabHostBody])",
 		],
 		/**
 		 * The composer's scrim.

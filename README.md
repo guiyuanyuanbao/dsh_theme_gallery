@@ -117,7 +117,7 @@ git clone https://github.com/guiyuanyuanbao/dsh_theme_gallery.git
 |---|---|---|
 | 设置面板 | `[role="dialog"]` | `--dsw-alias-bg-layer-2` |
 | 侧边栏 | `[class*=sidebarCol]` | `--dsw-specific-sidebar-fill` |
-| 聊天页面 | `[class*=frame]`，以及右侧边栏的 `[class*=panelBody] [class*=tabHost]:not([class*=tabHostBody])` | `--dsw-alias-bg-base` |
+| 聊天页面 | `[class*=frame]`，以及右侧边栏的 `[class*=panelBody] [class*=tabHost]:not([class*=tabHostHeader]):not([class*=tabHostBody])` | `--dsw-alias-bg-base` |
 | 输入框 | 输入框座位下的 `[class*=card]` | `--dsw-specific-input-major` |
 
 四个页面用的是**不同的**全局 token，所以只能分别调；改一个共享 token 会把四个一起压平。
@@ -136,7 +136,7 @@ git clone https://github.com/guiyuanyuanbao/dsh_theme_gallery.git
 `tabHostBody`，等于给后者凭空加了一层半透明 —— 面板叠了 4 层遮罩，对话区只有 3 层，
 实测像素 `(33,11,41)` 对 `(52,9,60)`，肉眼就是「右边更暗」。
 
-所以选择器必须写成 `[class*=tabHost]:not([class*=tabHostBody])`。
+所以选择器必须写成 `[class*=tabHost]:not([class*=tabHostHeader]):not([class*=tabHostBody])`。
 `verify.py` 现在会检查最后一个 `[class*=…]` 是否配了 `:not()` 去排除包含它的更长类名 ——
 这种缺陷在代码评审和 grep 里都看不出来，只能靠断言挡住。
 
@@ -376,3 +376,4 @@ bundle 保持在 170KB 左右，浏览器还能把图片永久缓存。
 如果你要再分发这些图片，请自行确认它们各自的授权条款。
 
 代码以 MIT 许可发布，见 [LICENSE](LICENSE)。
+

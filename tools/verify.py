@@ -36,6 +36,25 @@ from dsh_paths import find_dsh_packages
 BUILD = Path(__file__).resolve().parent
 PKG = BUILD.parent
 
+#: Classes that CONTAIN a stem an opacity selector matches on, and must therefore
+#: be excluded by an explicit `:not([class*=…])`.
+#:
+#: A build-hashed class name gives no way to match one element exactly, so the
+#: selectors use substrings — and a substring captures every sibling whose name
+#: happens to start with the same word. For the right sidebar's pane the client
+#: ships three: `_tabHost_` (the pane, paints `bg-base`), `_tabHostHeader_` (its
+#: title bar, which paints the same token) and `_tabHostBody_` (its body, which
+#: paints nothing). Painting all three put one extra mask over the panel and
+#: overwrote the header, so the panel stopped matching the conversation beside it.
+#:
+#: This table cannot be derived from the bundle, so it is maintained by hand and
+#: checked against the selector: every variant listed here must have its own
+#: `:not()`. A variant added by a future DSH build still needs its own guard; the
+#: browser measurement in the README is what would reveal that.
+KNOWN_VARIANTS = {
+    "tabHost": ["tabHostHeader", "tabHostBody"],
+}
+
 # The floors the builder targets, restated here so a change in one file cannot
 # quietly move the bar in the other. These are the WCAG figures, not the
 # builder's margin: verification asserts the requirement, not the cushion.
@@ -720,32 +739,49 @@ def check_host() -> None:
                             elif expected_extra_fill not in rule.group(1):
                                 fail(f"{key}: the extra selector {extra} does not paint the same "
                                      "colour at the same alpha as the surface it belongs to")
-                            # A substring match can capture BOTH an element and a
-                            # nested one whose class merely CONTAINS the same text
-                            # ("tabHostBody" contains "tabHost"). When that happens
-                            # the rule adds a second translucent layer to a node the
-                            # client leaves transparent, and the panel ends up one
-                            # mask darker than the surface it is meant to match —
-                            # measured as 4 composited layers against the
-                            # conversation's 3. The defence is the selector's own
-                            # `:not()`, asserted here because a widened substring is
-                            # invisible in review and in a grep for the class name.
+                            # A substring match captures EVERY element whose class
+                            # contains the stem, and a build-hashed prefix means
+                            # several variants share it: the right sidebar's pane
+                            # is `_tabHost_`, beside `_tabHostHeader_` (which paints
+                            # the same token for its title bar) and `_tabHostBody_`
+                            # (which paints nothing). Matching all three both ADDS a
+                            # layer where the client had none and OVERWRITES one the
+                            # client already had, so the panel ends up out of step
+                            # with the surface it is meant to match — measured as 4
+                            # composited layers against the conversation's 3.
+                            #
+                            # The defence is an explicit `:not([class*=…])` for every
+                            # longer variant. There is no way to enumerate them from
+                            # the bundle, so the check is that the selector carries a
+                            # guard for each variant named in KNOWN_VARIANTS; a new
+                            # variant in a future build still needs its own guard,
+                            # and the note below says so.
+                            #
+                            # Only the LAST `[class*=…]` names the painted element;
+                            # earlier ones are ancestors used to scope the match and
+                            # are not painted by this rule.
                             # Only the LAST `[class*=…]` names the painted
-                            # element; the earlier ones are ancestors used to
-                            # scope the match and are not painted by this rule.
-                            stems = re.findall(r"\[class\*=([A-Za-z0-9_-]+)\]", extra)
+                            # element; earlier ones are ancestors used to scope the
+                            # match and are not painted by this rule. The `:not()`
+                            # guards are stripped FIRST, because they contain
+                            # `[class*=…]` of their own and would otherwise be
+                            # mistaken for the painted element — which silently
+                            # made this whole check a no-op when it was written the
+                            # other way round.
+                            painted_part = re.sub(r":not\([^)]*\)", "", extra)
+                            stems = re.findall(r"\[class\*=([A-Za-z0-9_-]+)\]", painted_part)
                             if stems:
                                 stem = stems[-1]
-                                guard = re.search(
-                                    rf":not\(\[class\*=[A-Za-z0-9_-]*{re.escape(stem)}[A-Za-z0-9_-]*\]\)",
-                                    extra,
-                                )
-                                if guard is None:
+                                variants = KNOWN_VARIANTS.get(stem, [])
+                                guards = re.findall(r":not\(\[class\*=([A-Za-z0-9_-]+)\]\)", extra)
+                                missing = [v for v in variants if v not in guards]
+                                if missing:
                                     fail(f"{key}: the extra selector {extra} matches "
-                                         f"[class*={stem}] without excluding a class that merely "
-                                         f"CONTAINS '{stem}' (such as '{stem}Body'), so it can add a "
-                                         "second translucent layer to a node the client leaves "
-                                         "transparent")
+                                         f"[class*={stem}] without excluding {missing}, so it also "
+                                         "paints classes that merely CONTAIN "
+                                         f"'{stem}' — adding a translucent layer to a node the "
+                                         "client leaves transparent, or overwriting one it already "
+                                         "paints")
                     notes.append(
                         f"per-page opacity: {surface_count} surface rule(s), {scrim_count} scrim "
                         f"rule(s) and {extra_count} extra selector rule(s), each setting an "
