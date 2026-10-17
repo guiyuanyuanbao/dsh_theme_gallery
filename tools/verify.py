@@ -520,7 +520,8 @@ def check_host() -> None:
         # the bundle, not with a copy written here. A copy would test this
         # verifier rather than the shipped code.
         tables = {}
-        for name in ("OPACITY_VARIABLES", "OPACITY_SELECTORS", "OPACITY_TOKENS", "OPACITY_SCRIMS"):
+        for name in ("OPACITY_VARIABLES", "OPACITY_SELECTORS", "OPACITY_TOKENS",
+                     "OPACITY_SCRIMS", "OPACITY_EXTRA_SELECTORS"):
             found = re.search(rf"const {name} = \{{(.*?)\n\t\t\}};", client_code, re.S)
             if found is None:
                 fail(f"client.js has no {name} table, so the opacity rules cannot be generated")
@@ -539,10 +540,12 @@ def check_host() -> None:
             f"const OPACITY_SELECTORS = {tables['OPACITY_SELECTORS']};\n"
             f"const OPACITY_TOKENS = {tables['OPACITY_TOKENS']};\n"
             f"const OPACITY_SCRIMS = {tables['OPACITY_SCRIMS']};\n"
+            f"const OPACITY_EXTRA_SELECTORS = {tables['OPACITY_EXTRA_SELECTORS']};\n"
             f"function opacityFill(key) {{{fill.group(1)}}}\n"
             f"function opacityRules() {{{gen.group(1)}}}\n"
             "console.log(JSON.stringify({ css: opacityRules(), selectors: OPACITY_SELECTORS,\n"
-            "  variables: OPACITY_VARIABLES, tokens: OPACITY_TOKENS, scrims: OPACITY_SCRIMS }));\n"
+            "  variables: OPACITY_VARIABLES, tokens: OPACITY_TOKENS, scrims: OPACITY_SCRIMS,\n"
+            "  extra: OPACITY_EXTRA_SELECTORS }));\n"
         )
         build = subprocess.run(
             ["node", "--input-type=module", "-e", script],
@@ -563,17 +566,22 @@ def check_host() -> None:
                 if produced["selectors"].get(key) == scrim
             )
             total = surface_count + scrim_count - folded
+            # Extra selectors are additional elements for an existing surface, so
+            # each one adds a rule without adding a surface.
+            extra_count = sum(len(v) for v in produced.get("extra", {}).values())
+            total += extra_count
             gated = re.findall(r"(html\[data-dsh-gallery\][^{]*)\{", css)
             if len(gated) != total:
                 fail(f"opacityRules produced {len(gated)} gated rule(s), "
-                     f"expected {total} — one per surface plus one per scrim, with a "
-                     "self-covering scrim folded into its surface's rule")
+                     f"expected {total} — one per surface plus one per scrim plus one per "
+                     "extra selector, with a self-covering scrim folded into its surface's rule")
             for token in ("--dsw-alias-bg-layer-2", "--dsw-specific-sidebar-fill",
                           "--dsw-alias-bg-base", "--dsw-specific-input-major"):
                 if f"var({token})" not in css:
                     fail(f"no produced rule re-states {token}, so that surface would ignore its slider")
             if css.count("color-mix(in srgb,") != total:
-                fail("the produced rules do not all set alpha through color-mix")            # Every produced rule must force its token opaque. Without it the
+                fail("the produced rules do not all set alpha through color-mix")
+            # Every produced rule must force its token opaque. Without it the
             # rule scales alpha down and the requested value is unreachable
             # whenever it exceeds what the palette solved.
             if css.count("rgb(from") != total:
@@ -692,10 +700,30 @@ def check_host() -> None:
                         if produced["selectors"].get(key) != entry["selector"]:
                             fail(f"{key}: the Host names the selector {entry['selector']} but the "
                                  f"client paints {produced['selectors'].get(key)}")
+                        # A surface that paints in more than one place records the
+                        # extra elements here; both sides must list the same ones,
+                        # or an element silently keeps the raw token alpha while
+                        # its neighbours follow the slider.
+                        declared_extra = list(entry.get("extraSelectors") or [])
+                        painted_extra = list(produced.get("extra", {}).get(key) or [])
+                        if declared_extra != painted_extra:
+                            fail(f"{key}: the Host records extra selectors {declared_extra} but "
+                                 f"the client paints {painted_extra}")
+                        for extra in painted_extra:
+                            expected_extra_fill = (
+                                f"color-mix(in srgb, rgb(from var({produced['tokens'][key]}) r g b / 1)"
+                                f" var({produced['variables'][key]}, 100%), transparent)"
+                            )
+                            rule = re.search(rf"{re.escape(extra)} \{{([^}}]*)\}}", css)
+                            if rule is None:
+                                fail(f"{key}: the extra selector {extra} produced no rule")
+                            elif expected_extra_fill not in rule.group(1):
+                                fail(f"{key}: the extra selector {extra} does not paint the same "
+                                     "colour at the same alpha as the surface it belongs to")
                     notes.append(
-                        f"per-page opacity: {surface_count} surface rule(s) and {scrim_count} scrim "
-                        f"rule(s), each setting an absolute alpha, and the Host inventory matches "
-                        "the client's tables"
+                        f"per-page opacity: {surface_count} surface rule(s), {scrim_count} scrim "
+                        f"rule(s) and {extra_count} extra selector rule(s), each setting an "
+                        "absolute alpha, and the Host inventory matches the client's tables"
                     )
     # The client must clear the variables when no wallpaper is selected.
     if "removeProperty(variable)" not in client_code:

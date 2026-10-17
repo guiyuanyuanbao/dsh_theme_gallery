@@ -117,13 +117,19 @@ git clone https://github.com/guiyuanyuanbao/dsh_theme_gallery.git
 |---|---|---|
 | 设置面板 | `[role="dialog"]` | `--dsw-alias-bg-layer-2` |
 | 侧边栏 | `[class*=sidebarCol]` | `--dsw-specific-sidebar-fill` |
-| 聊天页面 | `[class*=frame]` | `--dsw-alias-bg-base` |
+| 聊天页面 | `[class*=frame]`，以及右侧边栏的 `[class*=panelBody] [class*=tabHost]` | `--dsw-alias-bg-base` |
 | 输入框 | 输入框座位下的 `[class*=card]` | `--dsw-specific-input-major` |
 
 四个页面用的是**不同的**全局 token，所以只能分别调；改一个共享 token 会把四个一起压平。
 输入框之所以能独立调节，是因为 DSH 本来就用 `--dsw-specific-input-major` 画它，
 而求解给这个 token 的透明度（0.59–0.69）与聊天页面的 `bg-base`（0.44）不同 ——
 两者本来就是两种颜色。
+
+**右侧边栏单独列出来的原因**：它是个 portal 面板，渲染在对话**旁边**而不是里面，
+祖先链是 `tabHost → tabCell → tabLayout → surface → panel`，**任何一层都没有 `frame`**。
+所以 `[class*=frame]` 永远够不到它，它一直用 token 的原始求解透明度，
+而旁边的对话区跟着滑块走 —— 两者并排时亮度就对不上。它画的同样是 `bg-base`，
+所以归到**聊天页面**这一面，多一条选择器共用同一个变量。
 
 ---
 
@@ -332,6 +338,7 @@ bundle 保持在 170KB 左右，浏览器还能把图片永久缓存。
 | **端到端** | 真实图片 → 求解 → 真实 HTTP API → 重启后逐 token 还原（226 个 token 不变） |
 | **不透明度是绝对的** | 真实 Chrome：100% 得到 alpha `1.0`，0% 得到 `0`，61% 得到 `0.61` |
 | **四个页面互相独立** | 输入框 10% + 聊天页面 90% 时，输入框 `0.1`、对话面 `0.9` |
+| **右侧边栏与对话区一致** | 真实 Chrome 里打开右侧边栏，把聊天页面滑块设成 0% / 30% / 100%：右侧面板与对话区在三个值上计算色**完全相同**（`/ 0`、`/ 0.3`、完全不透明）。修复前右侧面板固定停在 `0.44`（token 求解值），旁边对话区跟着滑块走 |
 | **按主题记忆** | 碎镜面板设 100%，切到逆光显示它自己的 59%，拖到 24%，切回碎镜仍是 100% |
 | **输入框遮罩** | 座位渐变被清除（`backgroundImage: none`，说明插件规则**赢了层叠**），座位与上方对话面计算色完全相同 |
 | **反向注入** | 27 个缺陷逐一注入，`verify.py` 每次都失败 |

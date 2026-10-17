@@ -169,6 +169,22 @@ export const OPACITY_SURFACES = [
 		selector: "html[data-dsh-gallery] [class*=frame]",
 		purpose: "the conversation surface",
 		/**
+		 * Extra elements this surface paints, beyond `selector`.
+		 *
+		 * The right-hand sidebar is a portal panel rendered BESIDE the
+		 * conversation rather than inside it, so `[class*=frame]` never reaches
+		 * it: its ancestor chain runs `tabHost → tabCell → tabLayout → surface →
+		 * panel`, with no frame at any level. It still paints `bg-base`, so it
+		 * belongs to this surface; without these the panel kept the token's raw
+		 * solved alpha while the conversation beside it followed the slider, and
+		 * the two read as different brightnesses.
+		 *
+		 * `[class*=panelBody] [class*=tabHost]` is the element that actually
+		 * carries the background. The prefix is build-hashed, hence the
+		 * substring; the `panelBody` scope keeps it off unrelated tab hosts.
+		 */
+		extraSelectors: ["html[data-dsh-gallery] [class*=panelBody] [class*=tabHost]"],
+		/**
 		 * The composer's scrim.
 		 *
 		 * The seat is painted by the shipped client as

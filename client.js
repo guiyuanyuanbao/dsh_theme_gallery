@@ -1196,6 +1196,33 @@ function solvePixels(rgba, width, height) {
 			opacityInput: `html[${ART_ATTRIBUTE}] [data-composer-seat][data-conversation-region="composer"] [class*=card]`,
 		};
 		/**
+		 * Additional selectors for a surface that paints in more than one place.
+		 *
+		 * The right-hand sidebar is the case: it is a portal panel rendered
+		 * beside the conversation, NOT inside it, so `[class*=frame]` never
+		 * reaches it — its ancestor chain runs `tabHost → tabCell → tabLayout →
+		 * surface → panel`, with no frame at any level. It still paints
+		 * `bg-base`, so it belongs to the CONVERSATION surface; without an entry
+		 * here it kept the token's raw solved alpha while the conversation
+		 * around it followed the slider, and the two read as different
+		 * brightnesses side by side.
+		 *
+		 * Keyed by surface, so these extra selectors get that surface's fill and
+		 * its variable — a second selector can never disagree with the first
+		 * about colour or alpha.
+		 */
+		const OPACITY_EXTRA_SELECTORS = {
+			opacityChat: [
+				/**
+				 * The right sidebar's pane. `[class*=tabHost]` is the element that
+				 * actually carries the background; its build-hashed prefix is why
+				 * the match is a substring, and the descendant-of-a-pane scope is
+				 * what keeps it off unrelated tab hosts.
+				 */
+				`html[${ART_ATTRIBUTE}] [class*=panelBody] [class*=tabHost]`,
+			],
+		};
+		/**
 		 * The token each surface paints with, and therefore the colour whose
 		 * alpha the opacity control scales.
 		 *
@@ -1321,6 +1348,19 @@ function solvePixels(rgba, width, height) {
 					`  ${opacityFill(key)}`,
 					"}",
 				].join("\n"));
+			// A surface that paints in more than one place needs the same fill on
+			// each of them. They are separate rules rather than a selector list so
+			// a reader can see which element each one targets, and so one dead
+			// selector cannot take the others down with it.
+			for (const [key, selectors] of Object.entries(OPACITY_EXTRA_SELECTORS)) {
+				for (const selector of selectors) {
+					rules.push([
+						`${selector} {`,
+						`  ${opacityFill(key)}`,
+						"}",
+					].join("\n"));
+				}
+			}
 			// A scrim also has to DROP the client's own gradient: the fade is what
 			// makes the hole, and `background-color` alone would leave it in place,
 			// because the client paints the ramp through the `background` shorthand
