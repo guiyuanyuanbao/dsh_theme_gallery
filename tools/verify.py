@@ -720,6 +720,32 @@ def check_host() -> None:
                             elif expected_extra_fill not in rule.group(1):
                                 fail(f"{key}: the extra selector {extra} does not paint the same "
                                      "colour at the same alpha as the surface it belongs to")
+                            # A substring match can capture BOTH an element and a
+                            # nested one whose class merely CONTAINS the same text
+                            # ("tabHostBody" contains "tabHost"). When that happens
+                            # the rule adds a second translucent layer to a node the
+                            # client leaves transparent, and the panel ends up one
+                            # mask darker than the surface it is meant to match —
+                            # measured as 4 composited layers against the
+                            # conversation's 3. The defence is the selector's own
+                            # `:not()`, asserted here because a widened substring is
+                            # invisible in review and in a grep for the class name.
+                            # Only the LAST `[class*=…]` names the painted
+                            # element; the earlier ones are ancestors used to
+                            # scope the match and are not painted by this rule.
+                            stems = re.findall(r"\[class\*=([A-Za-z0-9_-]+)\]", extra)
+                            if stems:
+                                stem = stems[-1]
+                                guard = re.search(
+                                    rf":not\(\[class\*=[A-Za-z0-9_-]*{re.escape(stem)}[A-Za-z0-9_-]*\]\)",
+                                    extra,
+                                )
+                                if guard is None:
+                                    fail(f"{key}: the extra selector {extra} matches "
+                                         f"[class*={stem}] without excluding a class that merely "
+                                         f"CONTAINS '{stem}' (such as '{stem}Body'), so it can add a "
+                                         "second translucent layer to a node the client leaves "
+                                         "transparent")
                     notes.append(
                         f"per-page opacity: {surface_count} surface rule(s), {scrim_count} scrim "
                         f"rule(s) and {extra_count} extra selector rule(s), each setting an "

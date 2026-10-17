@@ -179,11 +179,17 @@ export const OPACITY_SURFACES = [
 		 * solved alpha while the conversation beside it followed the slider, and
 		 * the two read as different brightnesses.
 		 *
-		 * `[class*=panelBody] [class*=tabHost]` is the element that actually
-		 * carries the background. The prefix is build-hashed, hence the
-		 * substring; the `panelBody` scope keeps it off unrelated tab hosts.
+		 * `[class*=panelBody] [class*=tabHost]:not([class*=tabHostBody])` is the
+		 * element that natively carries the background. The `:not()` is
+		 * load-bearing, not tidiness: "tabHostBody" CONTAINS "tabHost", so the
+		 * bare substring also matched the pane's inner body — an element the
+		 * shipped client paints no background on — and the rule ADDED a second
+		 * translucent layer there. The panel then composited four masked layers
+		 * where the conversation beside it had three, and read darker.
 		 */
-		extraSelectors: ["html[data-dsh-gallery] [class*=panelBody] [class*=tabHost]"],
+		extraSelectors: [
+			"html[data-dsh-gallery] [class*=panelBody] [class*=tabHost]:not([class*=tabHostBody])",
+		],
 		/**
 		 * The composer's scrim.
 		 *

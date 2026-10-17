@@ -151,12 +151,24 @@ window.__ModuleLoader__.load({
 		const OPACITY_EXTRA_SELECTORS = {
 			opacityChat: [
 				/**
-				 * The right sidebar's pane. `[class*=tabHost]` is the element that
-				 * actually carries the background; its build-hashed prefix is why
-				 * the match is a substring, and the descendant-of-a-pane scope is
-				 * what keeps it off unrelated tab hosts.
+				 * The right sidebar's pane.
+				 *
+				 * `[class*=tabHost]` is the element that natively carries
+				 * `background: var(--dsw-alias-bg-base)`, so it is the one that
+				 * has to follow the slider.
+				 *
+				 * `:not([class*=tabHostBody])` is load-bearing, not tidiness.
+				 * "tabHostBody" CONTAINS "tabHost", so the bare substring matched
+				 * the pane's inner body as well — an element the shipped client
+				 * paints no background on at all. The rule therefore ADDED a
+				 * second translucent layer, and the panel composited four masked
+				 * layers where the conversation beside it had three: measurably
+				 * darker, which is the defect this selector is here to fix.
+				 *
+				 * The prefix is build-hashed, hence the substring match; the
+				 * `panelBody` scope keeps it off unrelated tab hosts.
 				 */
-				`html[${ART_ATTRIBUTE}] [class*=panelBody] [class*=tabHost]`,
+				`html[${ART_ATTRIBUTE}] [class*=panelBody] [class*=tabHost]:not([class*=tabHostBody])`,
 			],
 		};
 		/**

@@ -117,7 +117,7 @@ git clone https://github.com/guiyuanyuanbao/dsh_theme_gallery.git
 |---|---|---|
 | 设置面板 | `[role="dialog"]` | `--dsw-alias-bg-layer-2` |
 | 侧边栏 | `[class*=sidebarCol]` | `--dsw-specific-sidebar-fill` |
-| 聊天页面 | `[class*=frame]`，以及右侧边栏的 `[class*=panelBody] [class*=tabHost]` | `--dsw-alias-bg-base` |
+| 聊天页面 | `[class*=frame]`，以及右侧边栏的 `[class*=panelBody] [class*=tabHost]:not([class*=tabHostBody])` | `--dsw-alias-bg-base` |
 | 输入框 | 输入框座位下的 `[class*=card]` | `--dsw-specific-input-major` |
 
 四个页面用的是**不同的**全局 token，所以只能分别调；改一个共享 token 会把四个一起压平。
@@ -130,6 +130,15 @@ git clone https://github.com/guiyuanyuanbao/dsh_theme_gallery.git
 所以 `[class*=frame]` 永远够不到它，它一直用 token 的原始求解透明度，
 而旁边的对话区跟着滑块走 —— 两者并排时亮度就对不上。它画的同样是 `bg-base`，
 所以归到**聊天页面**这一面，多一条选择器共用同一个变量。
+
+**子串匹配的陷阱（这个坑踩了两次）**：`tabHostBody` 的类名**包含** `tabHost`。
+只写 `[class*=tabHost]` 会同时命中面板本体和它内部那个**本来没有背景**的
+`tabHostBody`，等于给后者凭空加了一层半透明 —— 面板叠了 4 层遮罩，对话区只有 3 层，
+实测像素 `(33,11,41)` 对 `(52,9,60)`，肉眼就是「右边更暗」。
+
+所以选择器必须写成 `[class*=tabHost]:not([class*=tabHostBody])`。
+`verify.py` 现在会检查最后一个 `[class*=…]` 是否配了 `:not()` 去排除包含它的更长类名 ——
+这种缺陷在代码评审和 grep 里都看不出来，只能靠断言挡住。
 
 ---
 
@@ -338,7 +347,7 @@ bundle 保持在 170KB 左右，浏览器还能把图片永久缓存。
 | **端到端** | 真实图片 → 求解 → 真实 HTTP API → 重启后逐 token 还原（226 个 token 不变） |
 | **不透明度是绝对的** | 真实 Chrome：100% 得到 alpha `1.0`，0% 得到 `0`，61% 得到 `0.61` |
 | **四个页面互相独立** | 输入框 10% + 聊天页面 90% 时，输入框 `0.1`、对话面 `0.9` |
-| **右侧边栏与对话区一致** | 真实 Chrome 里打开右侧边栏，把聊天页面滑块设成 0% / 30% / 100%：右侧面板与对话区在三个值上计算色**完全相同**（`/ 0`、`/ 0.3`、完全不透明）。修复前右侧面板固定停在 `0.44`（token 求解值），旁边对话区跟着滑块走 |
+| **右侧边栏与对话区一致** | 真实 Chrome 里打开右侧边栏，把画布换成纯品红后采样：两侧像素**完全相同**（`(52,9,60)`）。修复前右侧是 `(33,11,41)` —— 因为 `[class*=tabHost]` 同时命中了本来无背景的 `tabHostBody`，给面板多加了一层遮罩（4 层 vs 对话区的 3 层） |
 | **按主题记忆** | 碎镜面板设 100%，切到逆光显示它自己的 59%，拖到 24%，切回碎镜仍是 100% |
 | **输入框遮罩** | 座位渐变被清除（`backgroundImage: none`，说明插件规则**赢了层叠**），座位与上方对话面计算色完全相同 |
 | **反向注入** | 27 个缺陷逐一注入，`verify.py` 每次都失败 |
