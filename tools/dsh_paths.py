@@ -63,8 +63,8 @@ def _candidates() -> list[Path]:
 def find_dsh_packages() -> Path | None:
     """The `@deepseek-ai` directory inside a DSH installation, or None.
 
-    Use this where a missing installation is an ordinary outcome — a CI runner
-    has no DSH — rather than a mistake by the reader.
+    Use this where a missing installation is an ordinary outcome — a machine
+    without DSH installed — rather than a mistake by the reader.
     """
     for candidate in _candidates():
         if (candidate / _PACKAGES).is_dir():

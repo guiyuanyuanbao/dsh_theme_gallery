@@ -285,10 +285,10 @@ def check_host() -> None:
     bare import that is NOT declared still fails, as it would in the profile.
 
     The peer redirects need a DSH installation to point at, which a bare clone
-    on a CI runner does not have. That case SKIPS this check with a note rather
-    than failing: the check's subject is this package's manifest, and reporting
-    "no DSH here" as a defect of the package would make the suite unrunnable
-    anywhere but a developer's machine.
+    does not have. That case SKIPS this check with a note rather than failing:
+    the check's subject is this package's manifest, and reporting "no DSH here"
+    as a defect of the package would make the suite unrunnable anywhere but a
+    machine with DSH installed.
     """
     host = PKG / "index.js"
     manifest = json.loads((PKG / "package.json").read_text(encoding="utf-8"))
