@@ -94,7 +94,7 @@ Host 那一半需要重启 DSH 才生效。纯前端改动刷新页面即可。
 |---|---|---|
 | 设置面板 | `[role="dialog"]` | `--dsw-alias-bg-layer-2` |
 | 侧边栏 | `[class*=sidebarCol]` | `--dsw-specific-sidebar-fill` |
-| 聊天页面 | `[class*=frame]`，以及右侧边栏的 `[class*=panelBody] [class*=tabHost]:not([class*=tabHostHeader]):not([class*=tabHostBody])` | `--dsw-alias-bg-base` |
+| 聊天页面 | `[class*=frame]` | `--dsw-alias-bg-base` |
 | 输入框 | 输入框座位下的 `[class*=card]` | `--dsw-specific-input-major` |
 
 四个页面用的是不同的全局 token，所以只能分别调；改一个共享 token 会把四个一起压平。

@@ -36,25 +36,6 @@ from dsh_paths import find_dsh_packages
 BUILD = Path(__file__).resolve().parent
 PKG = BUILD.parent
 
-#: Classes that CONTAIN a stem an opacity selector matches on, and must therefore
-#: be excluded by an explicit `:not([class*=…])`.
-#:
-#: A build-hashed class name gives no way to match one element exactly, so the
-#: selectors use substrings — and a substring captures every sibling whose name
-#: happens to start with the same word. For the right sidebar's pane the client
-#: ships three: `_tabHost_` (the pane, paints `bg-base`), `_tabHostHeader_` (its
-#: title bar, which paints the same token) and `_tabHostBody_` (its body, which
-#: paints nothing). Painting all three put one extra mask over the panel and
-#: overwrote the header, so the panel stopped matching the conversation beside it.
-#:
-#: This table cannot be derived from the bundle, so it is maintained by hand and
-#: checked against the selector: every variant listed here must have its own
-#: `:not()`. A variant added by a future DSH build still needs its own guard; the
-#: browser measurement in the README is what would reveal that.
-KNOWN_VARIANTS = {
-    "tabHost": ["tabHostHeader", "tabHostBody"],
-}
-
 # The floors the builder targets, restated here so a change in one file cannot
 # quietly move the bar in the other. These are the WCAG figures, not the
 # builder's margin: verification asserts the requirement, not the cushion.
@@ -285,10 +266,10 @@ def check_host() -> None:
     bare import that is NOT declared still fails, as it would in the profile.
 
     The peer redirects need a DSH installation to point at, which a bare clone
-    does not have. That case SKIPS this check with a note rather than failing:
-    the check's subject is this package's manifest, and reporting "no DSH here"
-    as a defect of the package would make the suite unrunnable anywhere but a
-    machine with DSH installed.
+    on a CI runner does not have. That case SKIPS this check with a note rather
+    than failing: the check's subject is this package's manifest, and reporting
+    "no DSH here" as a defect of the package would make the suite unrunnable
+    anywhere but a developer's machine.
     """
     host = PKG / "index.js"
     manifest = json.loads((PKG / "package.json").read_text(encoding="utf-8"))
@@ -539,8 +520,7 @@ def check_host() -> None:
         # the bundle, not with a copy written here. A copy would test this
         # verifier rather than the shipped code.
         tables = {}
-        for name in ("OPACITY_VARIABLES", "OPACITY_SELECTORS", "OPACITY_TOKENS",
-                     "OPACITY_SCRIMS", "OPACITY_EXTRA_SELECTORS"):
+        for name in ("OPACITY_VARIABLES", "OPACITY_SELECTORS", "OPACITY_TOKENS", "OPACITY_SCRIMS"):
             found = re.search(rf"const {name} = \{{(.*?)\n\t\t\}};", client_code, re.S)
             if found is None:
                 fail(f"client.js has no {name} table, so the opacity rules cannot be generated")
@@ -559,12 +539,10 @@ def check_host() -> None:
             f"const OPACITY_SELECTORS = {tables['OPACITY_SELECTORS']};\n"
             f"const OPACITY_TOKENS = {tables['OPACITY_TOKENS']};\n"
             f"const OPACITY_SCRIMS = {tables['OPACITY_SCRIMS']};\n"
-            f"const OPACITY_EXTRA_SELECTORS = {tables['OPACITY_EXTRA_SELECTORS']};\n"
             f"function opacityFill(key) {{{fill.group(1)}}}\n"
             f"function opacityRules() {{{gen.group(1)}}}\n"
             "console.log(JSON.stringify({ css: opacityRules(), selectors: OPACITY_SELECTORS,\n"
-            "  variables: OPACITY_VARIABLES, tokens: OPACITY_TOKENS, scrims: OPACITY_SCRIMS,\n"
-            "  extra: OPACITY_EXTRA_SELECTORS }));\n"
+            "  variables: OPACITY_VARIABLES, tokens: OPACITY_TOKENS, scrims: OPACITY_SCRIMS }));\n"
         )
         build = subprocess.run(
             ["node", "--input-type=module", "-e", script],
@@ -585,32 +563,22 @@ def check_host() -> None:
                 if produced["selectors"].get(key) == scrim
             )
             total = surface_count + scrim_count - folded
-            # Extra selectors are additional elements for an existing surface, so
-            # each one adds a rule without adding a surface.
-            extra_count = sum(len(v) for v in produced.get("extra", {}).values())
-            total += extra_count
             gated = re.findall(r"(html\[data-dsh-gallery\][^{]*)\{", css)
             if len(gated) != total:
                 fail(f"opacityRules produced {len(gated)} gated rule(s), "
-                     f"expected {total} — one per surface plus one per scrim plus one per "
-                     "extra selector, with a self-covering scrim folded into its surface's rule")
+                     f"expected {total} — one per surface plus one per scrim, with a "
+                     "self-covering scrim folded into its surface's rule")
             for token in ("--dsw-alias-bg-layer-2", "--dsw-specific-sidebar-fill",
                           "--dsw-alias-bg-base", "--dsw-specific-input-major"):
                 if f"var({token})" not in css:
                     fail(f"no produced rule re-states {token}, so that surface would ignore its slider")
-            # Scrim rules are the exception: they DROP the client's ramp and paint
-            # nothing, so they neither mix a colour nor force a token opaque. Only
-            # the rules that actually paint a surface are counted here.
-            painting = total - scrim_count
-            if css.count("color-mix(in srgb,") != painting:
-                fail(f"only {css.count('color-mix(in srgb,')} of {painting} painting rule(s) set "
-                     "alpha through color-mix")
-            # Every painting rule must force its token opaque. Without it the
+            if css.count("color-mix(in srgb,") != total:
+                fail("the produced rules do not all set alpha through color-mix")            # Every produced rule must force its token opaque. Without it the
             # rule scales alpha down and the requested value is unreachable
             # whenever it exceeds what the palette solved.
-            if css.count("rgb(from") != painting:
-                fail(f"only {css.count('rgb(from')} of {painting} painting rule(s) force the token "
-                     "opaque, so the rest can only reduce alpha")
+            if css.count("rgb(from") != total:
+                fail(f"only {css.count('rgb(from')} of {total} produced rules force the token opaque, "
+                     "so the rest can only reduce alpha")
             if "/ 1)" not in css:
                 fail("the produced rules do not pin alpha to 1 before mixing, so the token's own "
                      "alpha would still leak into the result")
@@ -674,21 +642,20 @@ def check_host() -> None:
                          "the shipped client's own rule uses three, so this one would lose "
                          "the cascade")
                 body = rule.group(1)
-                # The scrim must be DROPPED, not repainted. The shipped client's
-                # ramp ends at the OPAQUE token, so while the token is opaque the
-                # element is invisible; a wallpaper makes its `transparent` start a
-                # real hole. Both repaintings were tried and both were wrong: a
-                # flat fill and a ramp ending at the surface's own alpha each leave
-                # the composer band darker than the rest of the surface, because
-                # the surface rule ALREADY paints this element's background. On a
-                # flat canvas the band read rgb(33, 10, 41) against rgb(52, 9, 60);
-                # with the ramp dropped it matches.
                 if "background-image: none;" not in body:
-                    fail(f"the {key} scrim rule does not drop the client's ramp, so the "
-                         "transparent start stays a hole and content keeps showing through")
-                if "background-color: transparent;" not in body:
-                    fail(f"the {key} scrim rule paints a colour of its own, so it stacks a "
-                         "second mask over the surface that already covers it")
+                    fail(f"the {key} scrim rule does not drop the client's gradient, so the "
+                         "transparent start stays and content keeps showing through")
+                if produced["tokens"][key] not in body:
+                    fail(f"the {key} scrim rule does not restate its surface's token")
+                # The scrim must emit the surface's OWN declaration, character for
+                # character, so the two cannot disagree about the alpha.
+                expected_fill = (
+                    f"color-mix(in srgb, rgb(from var({produced['tokens'][key]}) r g b / 1)"
+                    f" var({produced['variables'][key]}, 100%), transparent)"
+                )
+                if expected_fill not in body:
+                    fail(f"the {key} scrim rule does not paint the surface's own colour at the "
+                         "surface's own alpha, so the two can disagree")
 
             # ---- the Host's inventory and the client's tables must agree ----
             # index.js records the surfaces and their scrims; the client owns the
@@ -725,73 +692,10 @@ def check_host() -> None:
                         if produced["selectors"].get(key) != entry["selector"]:
                             fail(f"{key}: the Host names the selector {entry['selector']} but the "
                                  f"client paints {produced['selectors'].get(key)}")
-                        # A surface that paints in more than one place records the
-                        # extra elements here; both sides must list the same ones,
-                        # or an element silently keeps the raw token alpha while
-                        # its neighbours follow the slider.
-                        declared_extra = list(entry.get("extraSelectors") or [])
-                        painted_extra = list(produced.get("extra", {}).get(key) or [])
-                        if declared_extra != painted_extra:
-                            fail(f"{key}: the Host records extra selectors {declared_extra} but "
-                                 f"the client paints {painted_extra}")
-                        for extra in painted_extra:
-                            expected_extra_fill = (
-                                f"color-mix(in srgb, rgb(from var({produced['tokens'][key]}) r g b / 1)"
-                                f" var({produced['variables'][key]}, 100%), transparent)"
-                            )
-                            rule = re.search(rf"{re.escape(extra)} \{{([^}}]*)\}}", css)
-                            if rule is None:
-                                fail(f"{key}: the extra selector {extra} produced no rule")
-                            elif expected_extra_fill not in rule.group(1):
-                                fail(f"{key}: the extra selector {extra} does not paint the same "
-                                     "colour at the same alpha as the surface it belongs to")
-                            # A substring match captures EVERY element whose class
-                            # contains the stem, and a build-hashed prefix means
-                            # several variants share it: the right sidebar's pane
-                            # is `_tabHost_`, beside `_tabHostHeader_` (which paints
-                            # the same token for its title bar) and `_tabHostBody_`
-                            # (which paints nothing). Matching all three both ADDS a
-                            # layer where the client had none and OVERWRITES one the
-                            # client already had, so the panel ends up out of step
-                            # with the surface it is meant to match — measured as 4
-                            # composited layers against the conversation's 3.
-                            #
-                            # The defence is an explicit `:not([class*=…])` for every
-                            # longer variant. There is no way to enumerate them from
-                            # the bundle, so the check is that the selector carries a
-                            # guard for each variant named in KNOWN_VARIANTS; a new
-                            # variant in a future build still needs its own guard,
-                            # and the note below says so.
-                            #
-                            # Only the LAST `[class*=…]` names the painted element;
-                            # earlier ones are ancestors used to scope the match and
-                            # are not painted by this rule.
-                            # Only the LAST `[class*=…]` names the painted
-                            # element; earlier ones are ancestors used to scope the
-                            # match and are not painted by this rule. The `:not()`
-                            # guards are stripped FIRST, because they contain
-                            # `[class*=…]` of their own and would otherwise be
-                            # mistaken for the painted element — which silently
-                            # made this whole check a no-op when it was written the
-                            # other way round.
-                            painted_part = re.sub(r":not\([^)]*\)", "", extra)
-                            stems = re.findall(r"\[class\*=([A-Za-z0-9_-]+)\]", painted_part)
-                            if stems:
-                                stem = stems[-1]
-                                variants = KNOWN_VARIANTS.get(stem, [])
-                                guards = re.findall(r":not\(\[class\*=([A-Za-z0-9_-]+)\]\)", extra)
-                                missing = [v for v in variants if v not in guards]
-                                if missing:
-                                    fail(f"{key}: the extra selector {extra} matches "
-                                         f"[class*={stem}] without excluding {missing}, so it also "
-                                         "paints classes that merely CONTAIN "
-                                         f"'{stem}' — adding a translucent layer to a node the "
-                                         "client leaves transparent, or overwriting one it already "
-                                         "paints")
                     notes.append(
-                        f"per-page opacity: {surface_count} surface rule(s), {scrim_count} scrim "
-                        f"rule(s) and {extra_count} extra selector rule(s), each setting an "
-                        "absolute alpha, and the Host inventory matches the client's tables"
+                        f"per-page opacity: {surface_count} surface rule(s) and {scrim_count} scrim "
+                        f"rule(s), each setting an absolute alpha, and the Host inventory matches "
+                        "the client's tables"
                     )
     # The client must clear the variables when no wallpaper is selected.
     if "removeProperty(variable)" not in client_code:

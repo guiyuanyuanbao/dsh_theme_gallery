@@ -133,52 +133,6 @@ window.__ModuleLoader__.load({
 			opacityInput: `html[${ART_ATTRIBUTE}] [data-composer-seat][data-conversation-region="composer"] [class*=card]`,
 		};
 		/**
-		 * Additional selectors for a surface that paints in more than one place.
-		 *
-		 * The right-hand sidebar is the case: it is a portal panel rendered
-		 * beside the conversation, NOT inside it, so `[class*=frame]` never
-		 * reaches it — its ancestor chain runs `tabHost → tabCell → tabLayout →
-		 * surface → panel`, with no frame at any level. It still paints
-		 * `bg-base`, so it belongs to the CONVERSATION surface; without an entry
-		 * here it kept the token's raw solved alpha while the conversation
-		 * around it followed the slider, and the two read as different
-		 * brightnesses side by side.
-		 *
-		 * Keyed by surface, so these extra selectors get that surface's fill and
-		 * its variable — a second selector can never disagree with the first
-		 * about colour or alpha.
-		 */
-		const OPACITY_EXTRA_SELECTORS = {
-			opacityChat: [
-				/**
-				 * The right sidebar's pane.
-				 *
-				 * `[class*=tabHost]` is the element that natively carries
-				 * `background: var(--dsw-alias-bg-base)`, so it is the one that
-				 * has to follow the slider.
-				 *
-				 * The two `:not()` guards are load-bearing, not tidiness. The
-				 * panel's markup is
-				 *
-				 *     _tabHost_…        the pane itself, paints bg-base
-				 *     _tabHostHeader_…  its 38px title bar, ALSO paints bg-base
-				 *     _tabHostBody_…    its body, paints nothing
-				 *
-				 * and "tabHostHeader" and "tabHostBody" both CONTAIN "tabHost".
-				 * A bare substring therefore hit all three, which did two things:
-				 * it ADDED a layer to the body — an element the client leaves
-				 * transparent — and it overwrote the header's own value, so the
-				 * panel composited four masked layers where the conversation
-				 * beside it had three and its title bar stopped matching the pane
-				 * below it. Measured with a solid magenta canvas, the panel read
-				 * rgb(33, 11, 41) against the conversation's rgb(52, 9, 60).
-				 *
-				 * Excluding both leaves exactly one element: the pane.
-				 */
-				`html[${ART_ATTRIBUTE}] [class*=panelBody] [class*=tabHost]:not([class*=tabHostHeader]):not([class*=tabHostBody])`,
-			],
-		};
-		/**
 		 * The token each surface paints with, and therefore the colour whose
 		 * alpha the opacity control scales.
 		 *
@@ -304,44 +258,10 @@ window.__ModuleLoader__.load({
 					`  ${opacityFill(key)}`,
 					"}",
 				].join("\n"));
-			// A surface that paints in more than one place needs the same fill on
-			// each of them. They are separate rules rather than a selector list so
-			// a reader can see which element each one targets, and so one dead
-			// selector cannot take the others down with it.
-			for (const [key, selectors] of Object.entries(OPACITY_EXTRA_SELECTORS)) {
-				for (const selector of selectors) {
-					rules.push([
-						`${selector} {`,
-						`  ${opacityFill(key)}`,
-						"}",
-					].join("\n"));
-				}
-			}
-			// A scrim is the client's own `transparent -> token` RAMP. The shipped
-			// client ends it at the OPAQUE token, so while the token is opaque the
-			// ramp blends that colour into the identical colour behind it and the
-			// element is invisible — only its first 36px do any work, fading the
-			// transcript in. Once the token goes translucent the `transparent`
-			// START becomes a real hole and those 36px stop masking, which is the
-			// defect this rule exists for.
-			//
-			// The ramp is therefore DROPPED, not repainted. Two repaintings were
-			// tried and both were wrong:
-			//
-			//   * a flat fill of the surface's colour: turns the whole element into
-			//     a second copy of the page — a 238px block over the composer.
-			//   * the same ramp ending at the surface's own alpha: keeps the mask
-			//     but adds a layer the surface behind it already provides.
-			//
-			// Both leave the composer band darker than the rest of the surface.
-			// Measured on a flat canvas, the band read rgb(33, 10, 41) against
-			// rgb(52, 9, 60) elsewhere; with the ramp removed it matches.
-			//
-			// Dropping it is correct because the surface rule already paints this
-			// element's background: the seat is a child of the frame, which the
-			// plugin fills at the conversation's alpha. The transcript therefore
-			// still fades behind an opaque-enough layer — the surface's own — and
-			// no second one is stacked on top.
+			// A scrim also has to DROP the client's own gradient: the fade is what
+			// makes the hole, and `background-color` alone would leave it in place,
+			// because the client paints the ramp through the `background` shorthand
+			// and that resets the colour to transparent.
 			for (const [key, scrim] of Object.entries(OPACITY_SCRIMS)) {
 				const surface = OPACITY_SELECTORS[key];
 				// When the scrim is the surface itself the selector is emitted
@@ -352,7 +272,7 @@ window.__ModuleLoader__.load({
 				rules.push([
 					`${selector} {`,
 					"  background-image: none;",
-					"  background-color: transparent;",
+					`  ${opacityFill(key)}`,
 					"}",
 				].join("\n"));
 			}
