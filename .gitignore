@@ -1,0 +1,26 @@
+# Dependencies and build leftovers
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+
+# The generator's own scratch files: it writes probe scripts beside itself and
+# removes them, but an interrupted run can leave one behind.
+tools/_peer-resolver.mjs
+tools/_host-probe.mjs
+tools/_compat-probe.mjs
+tools/_*-probe.mjs
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Local overrides and logs
+*.log
+.env
+.env.*
+
+# Commit message scratch
+_commitmsg.txt

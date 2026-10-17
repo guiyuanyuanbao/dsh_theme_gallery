@@ -1,0 +1,62 @@
+{
+  "name": "dsh-theme-gallery",
+  "version": "1.0.1",
+  "private": true,
+  "description": "画廊 Gallery — wallpaper themes for the DSH Web client, with palettes solved from each image",
+  "type": "module",
+  "license": "MIT",
+  "author": "guiyuanyuanbao",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/guiyuanyuanbao/dsh_theme_gallery.git"
+  },
+  "homepage": "https://github.com/guiyuanyuanbao/dsh_theme_gallery#readme",
+  "bugs": {
+    "url": "https://github.com/guiyuanyuanbao/dsh_theme_gallery/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "theme",
+    "wallpaper",
+    "gallery"
+  ],
+  "files": [
+    "index.js",
+    "api.js",
+    "store.js",
+    "theme-data.js",
+    "client.js",
+    "cordis.patch.yml",
+    "assets/",
+    "preview.png",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-theme",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  },
+  "engines": {
+    "dsh": ">=0.2.0-rc.2 <0.3.0-0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-home-paths": ">=0.2.0-rc.2 <0.3.0-0",
+    "@deepseek-ai/schemastery": "~3.18.4"
+  }
+}

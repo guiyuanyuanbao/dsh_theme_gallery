@@ -1,0 +1,63 @@
+name: verify
+
+# The suite is the project's main claim: the palettes are solved, not chosen,
+# and the client bundle is generated rather than hand-edited. Running it on
+# every push is what keeps that claim true.
+#
+# DSH itself is not installable from this repository's CI, and several checks
+# resolve DSH's own packages (the theme stylesheet for token polarity, the peer
+# dependencies for the Host half). Those checks are skipped when no installation
+# is present; the rest run everywhere. See `tools/dsh_paths.py`.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade pip numpy pillow
+
+      - name: Check the manifest and the bundle syntax
+        run: |
+          node --check client.js
+          node --check index.js
+          node --check api.js
+          node --check store.js
+          node --check theme-data.js
+          node --check tools/peer-resolver.mjs
+          node -e "const m=require('./package.json'); if(!m.dsh?.bundle?.patch) throw new Error('no dsh.bundle.patch'); if(!m.dsh?.client) throw new Error('no dsh.client'); console.log('manifest ok')"
+
+      - name: Rebuild the palettes from the source images
+        # This is the load-bearing step: it proves the committed `client.js` and
+        # `theme-data.js` really are the generator's output for these images,
+        # rather than something hand-edited afterwards.
+        run: python tools/build_palettes.py
+
+      - name: The rebuild must not change a committed file
+        run: git diff --exit-code -- client.js theme-data.js
+
+      - name: Solver parity and the inlined solver
+        run: |
+          node tools/verify-solver.mjs
+          node tools/verify-inlined.mjs
+
+      - name: Bundle verification
+        run: python tools/verify.py
+
+      - name: Manifest compatibility ranges
+        run: python tools/verify-compat.py
