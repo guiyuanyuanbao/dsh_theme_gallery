@@ -1,13 +1,13 @@
 name: verify
 
-# The suite is the project's main claim: the palettes are solved, not chosen,
-# and the client bundle is generated rather than hand-edited. Running it on
-# every push is what keeps that claim true.
+# The suite is the project's main claim: the palettes are solved rather than
+# chosen, and the client bundle is generated rather than hand-edited. Running it
+# on every push is what keeps that claim true.
 #
-# DSH itself is not installable from this repository's CI, and several checks
-# resolve DSH's own packages (the theme stylesheet for token polarity, the peer
-# dependencies for the Host half). Those checks are skipped when no installation
-# is present; the rest run everywhere. See `tools/dsh_paths.py`.
+# DSH itself is not installable in CI, and a few checks resolve DSH's own
+# packages (the theme stylesheet for token polarity, the peer dependencies for
+# the Host half). Those are skipped when no installation is present; everything
+# else runs. See `tools/dsh_paths.py`.
 
 on:
   push:
@@ -20,6 +20,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # The generated files are compared byte for byte against a rebuild, so the
+      # checkout must not rewrite line endings. `.gitattributes` already pins
+      # `eol=lf`, and this makes the intent explicit rather than implicit.
+      - name: Check out with LF endings
+        run: |
+          git config core.autocrlf false
+          git config core.eol lf
 
       - uses: actions/setup-node@v4
         with:
@@ -43,13 +51,17 @@ jobs:
           node -e "const m=require('./package.json'); if(!m.dsh?.bundle?.patch) throw new Error('no dsh.bundle.patch'); if(!m.dsh?.client) throw new Error('no dsh.client'); console.log('manifest ok')"
 
       - name: Rebuild the palettes from the source images
-        # This is the load-bearing step: it proves the committed `client.js` and
+        # The load-bearing step: it proves the committed `client.js` and
         # `theme-data.js` really are the generator's output for these images,
-        # rather than something hand-edited afterwards.
+        # rather than something edited by hand afterwards.
         run: python tools/build_palettes.py
 
       - name: The rebuild must not change a committed file
-        run: git diff --exit-code -- client.js theme-data.js
+        run: |
+          if ! git diff --exit-code -- client.js theme-data.js tools/palette.json; then
+            echo "::error::The committed generated files do not match a rebuild. Run 'python tools/build_palettes.py' and commit the result."
+            exit 1
+          fi
 
       - name: Solver parity and the inlined solver
         run: |

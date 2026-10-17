@@ -1,6 +1,6 @@
 {
   "name": "dsh-theme-gallery",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "画廊 Gallery — wallpaper themes for the DSH Web client, with palettes solved from each image",
   "type": "module",
@@ -60,3 +60,4 @@
     "@deepseek-ai/schemastery": "~3.18.4"
   }
 }
+

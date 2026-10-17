@@ -1,8 +1,12 @@
 # The generated JavaScript must survive a clone byte for byte: `verify.py`
-# compares the inlined solver against `solver.js` textually, and the palettes
-# against the Python generator's output. A checkout that rewrote CRLF on the way
-# in would fail those checks for a reason that has nothing to do with the code.
-* -text
+# compares the inlined solver against `solver.js` textually, and CI rebuilds the
+# palettes and requires the result to be identical to what is committed.
+#
+# Everything is stored and checked out with LF, on every platform. The generator
+# writes LF (`"\n"` in `build_palettes.py`), so a checkout that produced CRLF
+# would make a rebuild look like a full-file rewrite — which is exactly the
+# failure this file exists to prevent.
+* text=auto eol=lf
 
 # Artwork is binary and must never be line-ending converted.
 *.png binary

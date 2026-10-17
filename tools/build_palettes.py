@@ -694,7 +694,7 @@ def main() -> None:
         }
         report.append((slug, title, an, solved, size))
 
-    (BUILD / "palette.json").write_text(json.dumps(themes, indent=1, ensure_ascii=False), encoding="utf-8")
+    (BUILD / "palette.json").write_text(json.dumps(themes, indent=1, ensure_ascii=False), encoding="utf-8", newline="\n")
 
     # ---- splice the tables into the client template ------------------------
     template = (BUILD / "client.template.js").read_text(encoding="utf-8")
@@ -762,7 +762,7 @@ def main() -> None:
         "export const GALLERY = {\n" + body + ",\n};\n\n"
         "export default GALLERY;\n"
     )
-    (PKG / "theme-data.js").write_text(theme_data, encoding="utf-8")
+    (PKG / "theme-data.js").write_text(theme_data, encoding="utf-8", newline="\n")
 
     block = "const GALLERY = " + json.dumps(data, ensure_ascii=False, separators=(",", ":")) + ";"
 
@@ -791,7 +791,7 @@ def main() -> None:
     # interpret backslashes in the replacement the way `re.sub` does — which
     # matters, because the solver is full of regex literals.
     rendered = template.replace(marker, block).replace(solver_marker, solver)
-    (PKG / "client.js").write_text(rendered, encoding="utf-8")
+    (PKG / "client.js").write_text(rendered, encoding="utf-8", newline="\n")
 
     # ---- report ------------------------------------------------------------
     print()
