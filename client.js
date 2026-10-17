@@ -1380,10 +1380,31 @@ function solvePixels(rgba, width, height) {
 					].join("\n"));
 				}
 			}
-			// A scrim also has to DROP the client's own gradient: the fade is what
-			// makes the hole, and `background-color` alone would leave it in place,
-			// because the client paints the ramp through the `background` shorthand
-			// and that resets the colour to transparent.
+			// A scrim is the client's own `transparent -> token` RAMP. The shipped
+			// client ends it at the OPAQUE token, so while the token is opaque the
+			// ramp blends that colour into the identical colour behind it and the
+			// element is invisible — only its first 36px do any work, fading the
+			// transcript in. Once the token goes translucent the `transparent`
+			// START becomes a real hole and those 36px stop masking, which is the
+			// defect this rule exists for.
+			//
+			// The ramp is therefore DROPPED, not repainted. Two repaintings were
+			// tried and both were wrong:
+			//
+			//   * a flat fill of the surface's colour: turns the whole element into
+			//     a second copy of the page — a 238px block over the composer.
+			//   * the same ramp ending at the surface's own alpha: keeps the mask
+			//     but adds a layer the surface behind it already provides.
+			//
+			// Both leave the composer band darker than the rest of the surface.
+			// Measured on a flat canvas, the band read rgb(33, 10, 41) against
+			// rgb(52, 9, 60) elsewhere; with the ramp removed it matches.
+			//
+			// Dropping it is correct because the surface rule already paints this
+			// element's background: the seat is a child of the frame, which the
+			// plugin fills at the conversation's alpha. The transcript therefore
+			// still fades behind an opaque-enough layer — the surface's own — and
+			// no second one is stacked on top.
 			for (const [key, scrim] of Object.entries(OPACITY_SCRIMS)) {
 				const surface = OPACITY_SELECTORS[key];
 				// When the scrim is the surface itself the selector is emitted
@@ -1394,7 +1415,7 @@ function solvePixels(rgba, width, height) {
 				rules.push([
 					`${selector} {`,
 					"  background-image: none;",
-					`  ${opacityFill(key)}`,
+					"  background-color: transparent;",
 					"}",
 				].join("\n"));
 			}

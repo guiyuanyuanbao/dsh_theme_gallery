@@ -19,11 +19,11 @@ PYTHON = sys.executable
 
 DEFECTS = [
     (
-        "the scrim rule leaves the client's gradient in place",
+        "the scrim repaints a fill instead of dropping the client's ramp",
         PKG / "client.js",
-        '\t\t\t\t\t"  background-image: none;",\n',
-        "",
-        "does not drop the client's gradient",
+        '\t\t\t\t\t"  background-image: none;",\n\t\t\t\t\t"  background-color: transparent;",',
+        "\t\t\t\t\t`  ${opacityFill(key)}`,",
+        "paints a colour of its own",
     ),
     (
         "the scrim is anchored to the gate instead of under its surface",

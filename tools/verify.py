@@ -598,14 +598,19 @@ def check_host() -> None:
                           "--dsw-alias-bg-base", "--dsw-specific-input-major"):
                 if f"var({token})" not in css:
                     fail(f"no produced rule re-states {token}, so that surface would ignore its slider")
-            if css.count("color-mix(in srgb,") != total:
-                fail("the produced rules do not all set alpha through color-mix")
-            # Every produced rule must force its token opaque. Without it the
+            # Scrim rules are the exception: they DROP the client's ramp and paint
+            # nothing, so they neither mix a colour nor force a token opaque. Only
+            # the rules that actually paint a surface are counted here.
+            painting = total - scrim_count
+            if css.count("color-mix(in srgb,") != painting:
+                fail(f"only {css.count('color-mix(in srgb,')} of {painting} painting rule(s) set "
+                     "alpha through color-mix")
+            # Every painting rule must force its token opaque. Without it the
             # rule scales alpha down and the requested value is unreachable
             # whenever it exceeds what the palette solved.
-            if css.count("rgb(from") != total:
-                fail(f"only {css.count('rgb(from')} of {total} produced rules force the token opaque, "
-                     "so the rest can only reduce alpha")
+            if css.count("rgb(from") != painting:
+                fail(f"only {css.count('rgb(from')} of {painting} painting rule(s) force the token "
+                     "opaque, so the rest can only reduce alpha")
             if "/ 1)" not in css:
                 fail("the produced rules do not pin alpha to 1 before mixing, so the token's own "
                      "alpha would still leak into the result")
@@ -669,20 +674,21 @@ def check_host() -> None:
                          "the shipped client's own rule uses three, so this one would lose "
                          "the cascade")
                 body = rule.group(1)
+                # The scrim must be DROPPED, not repainted. The shipped client's
+                # ramp ends at the OPAQUE token, so while the token is opaque the
+                # element is invisible; a wallpaper makes its `transparent` start a
+                # real hole. Both repaintings were tried and both were wrong: a
+                # flat fill and a ramp ending at the surface's own alpha each leave
+                # the composer band darker than the rest of the surface, because
+                # the surface rule ALREADY paints this element's background. On a
+                # flat canvas the band read rgb(33, 10, 41) against rgb(52, 9, 60);
+                # with the ramp dropped it matches.
                 if "background-image: none;" not in body:
-                    fail(f"the {key} scrim rule does not drop the client's gradient, so the "
-                         "transparent start stays and content keeps showing through")
-                if produced["tokens"][key] not in body:
-                    fail(f"the {key} scrim rule does not restate its surface's token")
-                # The scrim must emit the surface's OWN declaration, character for
-                # character, so the two cannot disagree about the alpha.
-                expected_fill = (
-                    f"color-mix(in srgb, rgb(from var({produced['tokens'][key]}) r g b / 1)"
-                    f" var({produced['variables'][key]}, 100%), transparent)"
-                )
-                if expected_fill not in body:
-                    fail(f"the {key} scrim rule does not paint the surface's own colour at the "
-                         "surface's own alpha, so the two can disagree")
+                    fail(f"the {key} scrim rule does not drop the client's ramp, so the "
+                         "transparent start stays a hole and content keeps showing through")
+                if "background-color: transparent;" not in body:
+                    fail(f"the {key} scrim rule paints a colour of its own, so it stacks a "
+                         "second mask over the surface that already covers it")
 
             # ---- the Host's inventory and the client's tables must agree ----
             # index.js records the surfaces and their scrims; the client owns the
