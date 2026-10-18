@@ -106,6 +106,12 @@ def check_syntax(client_js: Path, package_name: str) -> str:
         "if (!Array.isArray(plugin.inject)) { console.error('plugin has no inject array'); process.exit(5); }\n"
         "console.log(JSON.stringify({ id: reg.id, inject: plugin.inject }));\n",
         encoding="utf-8",
+        # The repository pins LF and `verify.py` is run on Windows too, where
+        # the default newline translation would rewrite this file as CRLF on
+        # every run. Git then reports it as modified on a clean tree, and the
+        # diff is invisible because the bytes are equal after normalisation —
+        # which makes the check look like it dirties the working copy.
+        newline="\n",
     )
     done = subprocess.run(
         ["node", str(harness), client_js.resolve().as_uri()],
@@ -513,14 +519,14 @@ def check_host() -> None:
     if gen is None:
         fail("client.js has no opacityRules generator, so no page opacity can be applied")
     elif fill is None:
-        fail("client.js has no opacityFill helper, so a surface and its scrim could paint "
-             "two different alphas")
+        fail("client.js has no opacityFill helper, so a surface rule has no single source "
+             "for its alpha")
     else:
         # The generator is evaluated with the client's OWN tables, lifted from
         # the bundle, not with a copy written here. A copy would test this
         # verifier rather than the shipped code.
         tables = {}
-        for name in ("OPACITY_VARIABLES", "OPACITY_SELECTORS", "OPACITY_TOKENS", "OPACITY_SCRIMS"):
+        for name in ("OPACITY_VARIABLES", "OPACITY_SELECTORS", "OPACITY_TOKENS"):
             found = re.search(rf"const {name} = \{{(.*?)\n\t\t\}};", client_code, re.S)
             if found is None:
                 fail(f"client.js has no {name} table, so the opacity rules cannot be generated")
@@ -538,11 +544,10 @@ def check_host() -> None:
             f"const OPACITY_VARIABLES = {tables['OPACITY_VARIABLES']};\n"
             f"const OPACITY_SELECTORS = {tables['OPACITY_SELECTORS']};\n"
             f"const OPACITY_TOKENS = {tables['OPACITY_TOKENS']};\n"
-            f"const OPACITY_SCRIMS = {tables['OPACITY_SCRIMS']};\n"
             f"function opacityFill(key) {{{fill.group(1)}}}\n"
             f"function opacityRules() {{{gen.group(1)}}}\n"
             "console.log(JSON.stringify({ css: opacityRules(), selectors: OPACITY_SELECTORS,\n"
-            "  variables: OPACITY_VARIABLES, tokens: OPACITY_TOKENS, scrims: OPACITY_SCRIMS }));\n"
+            "  variables: OPACITY_VARIABLES, tokens: OPACITY_TOKENS }));\n"
         )
         build = subprocess.run(
             ["node", "--input-type=module", "-e", script],
@@ -554,20 +559,17 @@ def check_host() -> None:
             produced = json.loads(build.stdout.strip().splitlines()[-1])
             css = produced["css"]
             surface_count = len(produced["variables"])
-            scrim_count = len(produced["scrims"])
-            # A scrim that IS its surface is folded into a single rule carrying
-            # both declarations, so it does not add a second rule for the same
-            # element. Counting it twice here would demand a duplicate rule.
-            folded = sum(
-                1 for key, scrim in produced["scrims"].items()
-                if produced["selectors"].get(key) == scrim
-            )
-            total = surface_count + scrim_count - folded
+            # Exactly one rule per surface, and nothing else. This is the check
+            # that would have caught the two rules this plugin used to emit over
+            # and above the surfaces: a scrim fill on the composer's seat, and a
+            # `[class*=frame]` chat rule that also matched half a dozen unrelated
+            # widgets. Both painted a second, separately-opaque layer onto
+            # elements the shipped client had already coloured.
+            total = surface_count
             gated = re.findall(r"(html\[data-dsh-gallery\][^{]*)\{", css)
             if len(gated) != total:
-                fail(f"opacityRules produced {len(gated)} gated rule(s), "
-                     f"expected {total} — one per surface plus one per scrim, with a "
-                     "self-covering scrim folded into its surface's rule")
+                fail(f"opacityRules produced {len(gated)} gated rule(s), expected exactly "
+                     f"{total} — one per surface and no extra element painted")
             for token in ("--dsw-alias-bg-layer-2", "--dsw-specific-sidebar-fill",
                           "--dsw-alias-bg-base", "--dsw-specific-input-major"):
                 if f"var({token})" not in css:
@@ -582,86 +584,70 @@ def check_host() -> None:
             if "/ 1)" not in css:
                 fail("the produced rules do not pin alpha to 1 before mixing, so the token's own "
                      "alpha would still leak into the result")
-
-            # No element may be painted by two rules. A scrim that IS its surface
-            # is folded into one rule carrying both declarations; if the generator
-            # regresses to emitting both, the surface rule and the scrim rule would
-            # target the same element and the outcome would depend on their order —
-            # and no per-rule assertion can see that, because each rule on its own
-            # is well formed.
+            # A fill that also kills the element's own gradient, or that is
+            # emitted for an element the plugin does not own, is the shape of
+            # both regressions. `background-image` may not be touched at all.
+            if "background-image" in css:
+                fail("a produced rule sets background-image, which means it is overriding a "
+                     "gradient the shipped client owns rather than just re-colouring a surface")
             selectors_seen = re.findall(r"(html\[data-dsh-gallery\][^{]*)\{", css)
+            # The composer's seat must never be the SUBJECT of a rule. Its own
+            # gradient is the transcript mask, and a flat fill of the whole band
+            # reads as a second page stacked over the composer. It may still
+            # appear as an ANCESTOR — that is exactly what scopes the prompt
+            # box's `[class*=card]` rule to the composer rather than to every
+            # "card" in the document.
+            for selector in selectors_seen:
+                subject = re.split(r"\s+", selector.strip())[-1]
+                if "data-composer-seat" in subject:
+                    fail("a produced rule paints [data-composer-seat] itself, which turns the "
+                         "composer band into a second opaque copy of the page")
+
+            # No element may be painted by two rules.
             duplicates = sorted({s.strip() for s in selectors_seen if selectors_seen.count(s) > 1})
             if duplicates:
                 fail(f"opacityRules emits {len(duplicates)} selector(s) twice ({duplicates[0].strip()}), "
                      "so one element is painted by two rules and the result depends on their order")
 
-            # ---- each scrim: anchored under its surface, and flat ----
-            # Three separate properties, and each has been a real defect:
-            #   * the anchor gives the rule enough specificity to beat the
-            #     client's own `.Root[data-phase] .Seat` rule. Without it the
-            #     declaration is dropped by the cascade and the "fix" is a no-op
-            #     that still passes a grep for the selector.
-            #   * `background-image: none` removes the `transparent -> token`
-            #     ramp, which is the hole itself. A `background-color` alone
-            #     leaves the ramp in place, because the client paints it through
-            #     the `background` shorthand, which resets the colour.
-            #   * the fill has to be the surface's OWN declaration, so a scrim
-            #     cannot paint a different alpha from the surface above it.
-            for key, scrim in produced["scrims"].items():
-                if key not in produced["variables"]:
-                    fail(f"a scrim is declared for {key}, which is not a surface")
-                    continue
-                # The scrim element is usually a descendant of its surface, and
-                # then the two selectors concatenate — which is also what gives
-                # the rule the specificity to beat the client's own. When the
-                # scrim IS the surface (the prompt box paints the very gradient
-                # it has to drop), the generator emits the selector once with
-                # both declarations instead of repeating the element.
+            # ---- each surface rule: gated, and the surface's own colour ----
+            for key in produced["variables"]:
                 surface_selector = produced["selectors"][key]
-                expected_selector = (
-                    surface_selector if surface_selector == scrim
-                    else f"{surface_selector} {scrim}"
-                )
-                rule = re.search(rf"{re.escape(expected_selector)} \{{([^}}]*)\}}", css)
+                rule = re.search(rf"{re.escape(surface_selector)} \{{([^}}]*)\}}", css)
                 if rule is None:
-                    fail(f"the {key} scrim rule is not anchored under its own surface selector "
-                         f"({expected_selector}), so the shipped client's own rule outranks it "
-                         "and the scrim keeps its transparent start")
+                    fail(f"the {key} rule is missing from the generated stylesheet, so that "
+                         "slider would silently do nothing")
                     continue
-                # Anchoring is not only a naming choice: the shipped client paints
-                # the composer seat through `.Dc7zOa_root[data-phase=active]
-                # .Dc7zOa_composerSeat`, which is specificity (0,3,0) — two classes
-                # and one attribute. The plugin's rule must beat that on the
-                # attribute/class level OR, failing which, carry a type selector
-                # that only decides once those levels tie. Counting raw
-                # class-or-attribute tokens is what matters; the leading `html`
-                # then breaks the tie.
-                levels = len(re.findall(r"\[[^\]]*\]|\.[A-Za-z0-9_-]+", expected_selector))
-                if levels < 3:
-                    fail(f"the {key} scrim selector has {levels} class-or-attribute level(s); "
-                         "the shipped client's own rule uses three, so this one would lose "
-                         "the cascade")
                 body = rule.group(1)
-                if "background-image: none;" not in body:
-                    fail(f"the {key} scrim rule does not drop the client's gradient, so the "
-                         "transparent start stays and content keeps showing through")
                 if produced["tokens"][key] not in body:
-                    fail(f"the {key} scrim rule does not restate its surface's token")
-                # The scrim must emit the surface's OWN declaration, character for
-                # character, so the two cannot disagree about the alpha.
+                    fail(f"the {key} rule does not restate its surface's token")
                 expected_fill = (
                     f"color-mix(in srgb, rgb(from var({produced['tokens'][key]}) r g b / 1)"
                     f" var({produced['variables'][key]}, 100%), transparent)"
                 )
                 if expected_fill not in body:
-                    fail(f"the {key} scrim rule does not paint the surface's own colour at the "
-                         "surface's own alpha, so the two can disagree")
+                    fail(f"the {key} rule does not paint the surface's own colour at the "
+                         "surface's own alpha")
+
+            # ---- the chat rule must not reach `*_frame` widgets ----
+            # The shipped client names build-hashed classes `<hash>_frame` for
+            # several unrelated widgets that each carry their own colour (the
+            # chat view, the turn navigator, the attachment zoomer, a subagent
+            # card, the right sidebar, three in the document preview). A
+            # substring match on "frame" painted all of them; the conversation
+            # panel is named by `data-phase` instead, which only it wears.
+            chat_selector = produced["selectors"].get("opacityChat", "")
+            if "frame" in chat_selector:
+                fail("the chat rule still matches [class*=frame], which reaches every *_frame "
+                     "widget and stacks a second flat layer over each")
+            if "data-phase" not in chat_selector:
+                fail("the chat rule is not anchored on data-phase, so it is not tied to the one "
+                     "element that actually paints bg-base")
 
             # ---- the Host's inventory and the client's tables must agree ----
-            # index.js records the surfaces and their scrims; the client owns the
-            # rules. They are separate bundles that cannot import each other, so
-            # this comparison is the only thing keeping them in step. A surface
-            # added on one side alone is a slider that silently does nothing.
+            # index.js records the surfaces; the client owns the rules. They are
+            # separate bundles that cannot import each other, so this comparison
+            # is the only thing keeping them in step. A surface added on one side
+            # alone is a slider that silently does nothing.
             inventory = re.search(r"export const OPACITY_SURFACES = (\[.*?\n\]);", host_source, re.S)
             if inventory is None:
                 fail("index.js declares no OPACITY_SURFACES table, so the surface inventory "
@@ -680,10 +666,13 @@ def check_host() -> None:
                     if sorted(declared_keys) != sorted(produced["variables"]):
                         fail(f"the Host declares surfaces {declared_keys} but the client paints "
                              f"{sorted(produced['variables'])}, so at least one has no effect")
-                    declared_scrims = {e["key"]: e.get("scrim") for e in declared if e.get("scrim")}
-                    if declared_scrims != produced["scrims"]:
-                        fail(f"the Host records scrims {declared_scrims} but the client paints "
-                             f"{produced['scrims']}")
+                    # No surface may record a scrim any more: the plugin paints
+                    # the four surfaces themselves and leaves every inner
+                    # gradient to the shipped client.
+                    declared_scrims = {e["key"]: e["scrim"] for e in declared if e.get("scrim")}
+                    if declared_scrims:
+                        fail(f"the Host still records scrim(s) {declared_scrims}, so the client "
+                             "is expected to paint an inner element the plugin should leave alone")
                     for entry in declared:
                         key = entry["key"]
                         if produced["variables"].get(key) != entry["variable"]:
@@ -693,9 +682,9 @@ def check_host() -> None:
                             fail(f"{key}: the Host names the selector {entry['selector']} but the "
                                  f"client paints {produced['selectors'].get(key)}")
                     notes.append(
-                        f"per-page opacity: {surface_count} surface rule(s) and {scrim_count} scrim "
-                        f"rule(s), each setting an absolute alpha, and the Host inventory matches "
-                        "the client's tables"
+                        f"per-page opacity: exactly {surface_count} surface rule(s), each setting "
+                        "an absolute alpha, no inner element painted, and the Host inventory "
+                        "matches the client's tables"
                     )
     # The client must clear the variables when no wallpaper is selected.
     if "removeProperty(variable)" not in client_code:

@@ -1173,7 +1173,36 @@ function solvePixels(rgba, width, height) {
 		const OPACITY_SELECTORS = {
 			opacityPanel: `html[${ART_ATTRIBUTE}] [role="dialog"]`,
 			opacitySidebar: `html[${ART_ATTRIBUTE}] [class*=sidebarCol]`,
-			opacityChat: `html[${ART_ATTRIBUTE}] [class*=frame]`,
+			/**
+			 * The conversation panel: the ONE element that owns `bg-base` for the
+			 * page, found by the `data-phase` attribute it is the only wearer of.
+			 *
+			 * It used to be `[class*=frame]`, which was wrong in both directions.
+			 * `[class*=frame]` matches every build-hashed class whose name ends in
+			 * `_frame`, and those belong to unrelated widgets that each carry
+			 * their own colour: the chat view's `xz4KEq_frame` and turn navigator's
+			 * `xpvNua_frame`, the attachment zoomer's `Nhu-QW_frame`, a subagent
+			 * card's `jIHOOq_frame`, the right sidebar's `qWvkEq_frame`, and three
+			 * `*_frame` rules in the document preview alone. Painting `bg-base`
+			 * onto all of them stacked an extra flat layer over surfaces the
+			 * shipped client had already coloured, and the opaque variant replaced
+			 * their own fills outright.
+			 *
+			 * `data-phase` is the right handle. It is set by the conversation
+			 * root — the element whose own rule is `background:
+			 * var(--dsw-alias-bg-base)` — and by nothing else in the application
+			 * (the composer editor's `data-phase` is a plain attribute on the
+			 * contenteditable, not a class), so one attribute names the one
+			 * surface the slider is about. The attribute selectors are also what
+			 * gives the rule the specificity to beat the client's own
+			 * `.Dc7zOa_root{background:...}`: `html[...]` plus one attribute is a
+			 * type plus two attribute levels, and the client's is a single class.
+			 *
+			 * Its VALUE is deliberately not matched: `hero`, `active`, `settling`
+			 * are phases of the same panel, and pinning one of them would make
+			 * the slider stop working on the others.
+			 */
+			opacityChat: `html[${ART_ATTRIBUTE}] [class*=root][data-phase]`,
 			/**
 			 * The prompt box: the CARD, not the seat.
 			 *
@@ -1223,45 +1252,23 @@ function solvePixels(rgba, width, height) {
 			opacityInput: "--dsw-specific-input-major",
 		};
 		/**
-		 * The scrims that fade to a surface token and therefore assume it is
-		 * OPAQUE.
-		 *
-		 * The client paints some scrims as `transparent -> token`, and the
-		 * composer is the one that matters: its seat carries
-		 * `linear-gradient(180deg, transparent 0px, var(--dsw-alias-bg-base)
-		 * 36px)`, a ramp whose whole job is to hide the transcript sliding under
-		 * the composer. With an opaque token that ramp is invisible, because the
-		 * layer behind the fade is the same colour: it blends a colour into
-		 * itself. A wallpaper makes the token translucent and the `transparent`
-		 * start becomes a real hole — for the first 36px of the composer the
-		 * transcript scrolls past fully legible, and the composer reads lighter
-		 * than the conversation surface directly above it, while the composer's
-		 * own card (which carries its own opaque-ish background) still looks
-		 * right. That asymmetry is the bug, and it is why the defect looks like
-		 * "the outer box lost its mask but its children kept theirs".
-		 *
-		 * So each scrim is restated as a FLAT fill of its surface's own colour at
-		 * that surface's own chosen alpha — the identical declaration the surface
-		 * itself receives. The mask then matches the surface above it instead of
-		 * being one layer short, and it follows the same slider, so at 100 it is
-		 * once again a true opaque mask.
-		 *
-		 * The selector is the surface's own selector PLUS the scrim element.
-		 * For the composer the two coincide — the surface selector already ends
-		 * in `[data-composer-seat]` — so the scrim rule exists solely to drop
-		 * the client's `transparent -> token` gradient, which `background-color`
-		 * alone cannot do.
-		 */
-		const OPACITY_SCRIMS = {
-			opacityChat: "[data-composer-seat][data-conversation-region=\"composer\"]",
-		};
-		/**
 		 * The scoped rules that apply each surface's opacity.		 *
 		 * Generated from the two tables above so the three of them cannot drift
 		 * apart. Each rule re-states the surface's OWN background colour, so the
 		 * hue is always the one the solver measured for this image — the control
 		 * changes how much of the wallpaper comes through, never what colour the
 		 * page is.
+		 *
+		 * Nothing else is painted. An earlier version also restated the
+		 * composer's scrim — the `[data-composer-seat]` band that fades the
+		 * transcript under the prompt box — as a flat fill of `bg-base`, because
+		 * the client's own `transparent -> token` ramp stops masking once the
+		 * token goes translucent. That fix cost more than the defect: the seat is
+		 * a full-width band well over 200px tall, so a flat fill turned it into a
+		 * second, separately-opaque copy of the page sitting over the transcript
+		 * and over the input card. The seat now keeps the client's own gradient
+		 * and is not touched at all; the prompt box inside it is still the
+		 * `opacityInput` surface and still has its own slider.
 		 *
 		 * The percentage is an ABSOLUTE alpha: 0 is fully transparent, 100 fully
 		 * opaque, on every theme and every surface.
@@ -1296,50 +1303,25 @@ function solvePixels(rgba, width, height) {
 		/**
 		 * One surface's fill: its token's colour at the surface's chosen alpha.
 		 *
-		 * Factored out because the surface rule and its scrim rule must emit the
-		 * EXACT same declaration. A scrim only matches the surface above it if it
-		 * paints the same colour at the same alpha; two copies of this expression
-		 * could drift into two different alphas, which is the defect being fixed.
+		 * Factored out so the generated rule is the same expression for every
+		 * surface, and the alpha is always the one that surface's own slider
+		 * names — the token supplies the hue, the variable supplies the alpha.
 		 */
 		function opacityFill(key) {
 			return `background-color: color-mix(in srgb, rgb(from var(${OPACITY_TOKENS[key]}) r g b / 1) var(${OPACITY_VARIABLES[key]}, 100%), transparent);`;
 		}
 		function opacityRules() {
-			// A scrim normally sits INSIDE its surface, so it gets its own rule in
-			// addition to the surface's. Only a scrim that IS the surface — same
-			// selector, so both rules would target one element — is folded into a
-			// single rule carrying both declarations.
-			const foldedKeys = new Set(
-				Object.entries(OPACITY_SCRIMS)
-					.filter(([key, scrim]) => OPACITY_SELECTORS[key] === scrim)
-					.map(([key]) => key),
-			);
-			const rules = Object.keys(OPACITY_VARIABLES)
-				.filter((key) => !foldedKeys.has(key))
+			// One rule per surface, and nothing else: the four adjustable pages are
+			// the only elements the plugin paints. The rules are generated from the
+			// three tables above so the selector, the token, and the variable
+			// cannot drift apart.
+			return Object.keys(OPACITY_VARIABLES)
 				.map((key) => [
 					`${OPACITY_SELECTORS[key]} {`,
 					`  ${opacityFill(key)}`,
 					"}",
-				].join("\n"));
-			// A scrim also has to DROP the client's own gradient: the fade is what
-			// makes the hole, and `background-color` alone would leave it in place,
-			// because the client paints the ramp through the `background` shorthand
-			// and that resets the colour to transparent.
-			for (const [key, scrim] of Object.entries(OPACITY_SCRIMS)) {
-				const surface = OPACITY_SELECTORS[key];
-				// When the scrim is the surface itself the selector is emitted
-				// once. Otherwise the scrim is a descendant, and concatenating the
-				// two selectors is ALSO what gives the rule enough specificity to
-				// beat the client's own `.Root[data-phase] .Seat` rule.
-				const selector = surface === scrim ? surface : `${surface} ${scrim}`;
-				rules.push([
-					`${selector} {`,
-					"  background-image: none;",
-					`  ${opacityFill(key)}`,
-					"}",
-				].join("\n"));
-			}
-			return rules.join("\n");
+				].join("\n"))
+				.join("\n");
 		}
 
 		/** Bounds shared with the Host schema; mirrored so the UI cannot offer an invalid value. */

@@ -143,12 +143,14 @@ export const BLUR_DEFAULT = 0;
  * cannot drift apart without this list changing — `verify.py` re-reads this
  * table and compares it with the client's own tables.
  *
- * `scrim` names the element, INSIDE that surface, that the client fades from
- * `transparent` to the surface's token. Such a ramp only works while the token
- * is opaque; with a wallpaper the transparent end is a hole that lets content
- * scroll past unmasked. The client therefore restates each scrim as a flat fill
- * of the same surface at the same alpha, and the element is recorded here for
- * the same reason `selector` is.
+ * Nothing here records a scrim. An earlier version also listed, per surface,
+ * an inner element the client fades from `transparent` to the surface's token —
+ * the composer's `[data-composer-seat]` band — and had the client restate it as
+ * a flat fill so the fade would keep masking once the token went translucent.
+ * The seat is a full-width band well over 200px tall, so that fill read as a
+ * second, separately opaque copy of the page over the transcript and over the
+ * prompt box inside it. The band is now left entirely to the shipped client,
+ * and the plugin paints only the four surfaces themselves.
  */
 export const OPACITY_SURFACES = [
 	{
@@ -166,25 +168,20 @@ export const OPACITY_SURFACES = [
 	{
 		key: "opacityChat",
 		variable: "--dsh-gallery-opacity-chat",
-		selector: "html[data-dsh-gallery] [class*=frame]",
-		purpose: "the conversation surface",
 		/**
-		 * The composer's scrim.
+		 * The conversation panel, which is the one element that paints `bg-base`
+		 * for the page.
 		 *
-		 * The seat is painted by the shipped client as
-		 * `linear-gradient(180deg, transparent 0px, var(--dsw-alias-bg-base)
-		 * 36px)` — the mask over the transcript sliding under the composer. With
-		 * an opaque token that ramp is invisible, because it blends a colour into
-		 * itself; a wallpaper makes the token translucent and the `transparent`
-		 * start becomes a real hole, so the first 36px of the composer stay
-		 * legible and the box reads a layer lighter than the page above it.
-		 *
-		 * It belongs to the CONVERSATION surface, not the input one: the ramp's
-		 * job is to fade the transcript into the page, so it has to match the
-		 * page's colour and alpha. The prompt box is a separate, more solid thing
-		 * drawn on top of it and carries its own opacity.
+		 * It is found by `data-phase`, the attribute the conversation root sets
+		 * on itself and nothing else in the application does, so the rule reaches
+		 * exactly the surface the slider is named after. The previous selector was
+		 * `[class*=frame]`, which also matched unrelated widgets that carry their
+		 * own colours — the chat view's inner frame, the turn navigator, the
+		 * attachment zoomer, a subagent card, the right sidebar and three frames
+		 * inside the document preview — and stacked a second flat layer over each.
 		 */
-		scrim: "[data-composer-seat][data-conversation-region=\"composer\"]",
+		selector: "html[data-dsh-gallery] [class*=root][data-phase]",
+		purpose: "the conversation surface",
 	},
 	{
 		key: "opacityInput",
@@ -198,6 +195,10 @@ export const OPACITY_SURFACES = [
 		 * class is build-hashed, so `[class*=card]` under the seat is the stable
 		 * handle — scoping it under the seat is what stops it matching a "card"
 		 * anywhere else in the document.
+		 *
+		 * The seat itself is deliberately NOT painted: it is well over 200px tall
+		 * and full width, so a fill of its own turned it into a second, separately
+		 * opaque copy of the page over the transcript and over this card.
 		 */
 	},
 ];

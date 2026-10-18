@@ -94,10 +94,14 @@ Host 那一半需要重启 DSH 才生效。纯前端改动刷新页面即可。
 |---|---|---|
 | 设置面板 | `[role="dialog"]` | `--dsw-alias-bg-layer-2` |
 | 侧边栏 | `[class*=sidebarCol]` | `--dsw-specific-sidebar-fill` |
-| 聊天页面 | `[class*=frame]` | `--dsw-alias-bg-base` |
+| 聊天页面 | `[class*=root][data-phase]` | `--dsw-alias-bg-base` |
 | 输入框 | 输入框座位下的 `[class*=card]` | `--dsw-specific-input-major` |
 
 四个页面用的是不同的全局 token，所以只能分别调；改一个共享 token 会把四个一起压平。
+
+插件只给这四个页面本身重新上色。除此之外不碰任何元素：输入框座位（`[data-composer-seat]`）上那条 `transparent → bg-base` 渐变遮罩、以及各个 `*_frame` 部件自己的底色，都留给 DSH 原样绘制。
+
+聊天页面用 `[data-phase]` 定位，因为它只出现在会话根节点上——也就是真正画 `bg-base` 的那一个元素。早先用的是 `[class*=frame]`，它会顺带命中聊天视图、回合导航、附件缩放、子代理卡片、右侧栏和文档预览里共七八个同样叫 `*_frame` 的部件，并在它们已经画好的底色上再叠一层。
 
 输入框之所以能独立调节，是因为 DSH 本来就用 `--dsw-specific-input-major` 画它，而求解给这个 token 的透明度（0.59–0.69）与聊天页面的 `bg-base`（0.44）不同。
 

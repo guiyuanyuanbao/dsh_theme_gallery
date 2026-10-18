@@ -493,10 +493,13 @@ if (styles.length === 1) {
 			// variable declared, and the page would silently stop responding to
 			// its slider.
 			const esc = variable.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-			const rule = new RegExp(`html\\[data-dsh-gallery\\]\\s*\\[[^\\]]+\\]\\s*\\{[^}]*var\\(${esc}`);
+			// A selector may carry more than one attribute: the chat rule is
+			// `[class*=root][data-phase]`, two attribute selectors on one element,
+			// so the pattern accepts a run of them rather than exactly one.
+			const rule = new RegExp(`html\\[data-dsh-gallery\\]\\s*(?:\\[[^\\]]+\\]\\s*)+\\{[^}]*var\\(${esc}`);
 			check(rule.test(css), `no gated rule in the stylesheet reads ${variable}`);
 		}
-		const gated = css.match(/html\[data-dsh-gallery\]\s*\[[^\]]+\]\s*\{/g) ?? [];
+		const gated = css.match(/html\[data-dsh-gallery\]\s*(?:\[[^\]]+\]\s*)+\{/g) ?? [];
 		check(gated.length >= 3,
 			`only ${gated.length} opacity rule(s) are gated on the wallpaper attribute, expected 3`);
 		check((css.match(/color-mix\(in srgb,/g) ?? []).length >= 3,
